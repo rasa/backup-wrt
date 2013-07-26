@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# rename to backup-wrt-config.sh
+
+set allexport
+
+HTTP_USER='user_goes_here'
+HTTP_PASSWD='password_goes_here'
