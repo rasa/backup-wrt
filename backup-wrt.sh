@@ -87,19 +87,43 @@ DDWRT="$(grep -qi dd-wrt loginprompt.txt && echo 1)"
 
 # all OSs:
 
-CFE_BIN=cfe-backup.bin
+#CFE_BIN=cfe-backup.bin
 
-if [[ -z "${DDWRT}" ]]; then
-  MTD0=/dev/mtd0ro
-else
-  MTD0=/dev/mtdblock/0
-fi
+#if [[ -z "${DDWRT}" ]]; then
+#  MTD0=/dev/mtd0ro
+#else
+#  MTD0=/dev/mtdblock/0
+#fi
 
-${SSH} dd if="${MTD0}" >"${CFE_BIN}"
+#${SSH} dd if="${MTD0}" >"${CFE_BIN}"
 
 #${SSH} dd if="${MTD0}" bs=1 skip=4116 count=2048 | strings >cfe-strings.txt
 
-strings -n 8 "${CFE_BIN}" >cfe-strings.txt
+#strings -n 8 "${CFE_BIN}" >cfe-strings.txt
+
+mtdnum=`ssh -q root@192.168.1.1 cat /proc/mtd | grep mtd | wc -l`
+
+ssh -q root@192.168.1.1 cat /proc/mtd | grep mtd
+
+for ((i=0; i<$mtdnum;i+=1))
+do
+
+mtdname=mtd$i"_`ssh -q root@192.168.1.1 cat /proc/mtd | grep mtd$i | sed  's/^mtd[0-9].*"\(.*\)"$/\1/' | tr " " "_"`"
+
+if [[ -z "${DDWRT}" ]]; then
+  MTD0=/dev/mtd$i"ro"
+else
+  MTD0=/dev/mtdblock/$i
+fi
+
+echo if="${MTD0}" ${mtdname}
+${SSH} dd if="${MTD0}" >"${mtdname}.bin"
+
+strings -n 8 "${mtdname}" >${mtdname}-strings.txt
+
+done
+
+
 
 for cmd in ${CMDS}; do
   ${SSH} "${cmd}" >"${cmd}.txt"
@@ -216,3 +240,4 @@ ${SSH} ${TAR} -z /etc >"${BACKUP}"
 popd
 
 # eof
+
