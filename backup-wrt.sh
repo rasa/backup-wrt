@@ -111,13 +111,13 @@ do
 mtdname=mtd$i"_`ssh -q root@192.168.1.1 cat /proc/mtd | grep mtd$i | sed  's/^mtd[0-9].*"\(.*\)"$/\1/' | tr " " "_"`"
 
 if [[ -z "${DDWRT}" ]]; then
-  MTD0=/dev/mtd$i"ro"
+  MTD=/dev/mtd$i"ro"
 else
-  MTD0=/dev/mtdblock/$i
+  MTD=/dev/mtdblock/$i
 fi
 
-echo if="${MTD0}" ${mtdname}
-${SSH} dd if="${MTD0}" >"${mtdname}.bin"
+echo if="${MTD}" ${mtdname}
+${SSH} dd if="${MTD}" >"${mtdname}.bin"
 
 strings -n 8 "${mtdname}" >${mtdname}-strings.txt
 
