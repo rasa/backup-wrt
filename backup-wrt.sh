@@ -22,6 +22,7 @@ EXCLUDE_DIRS="
 "
 
 PROC_EXCLUDES="
+  kcore
   kmsg
   interrupts
 "
