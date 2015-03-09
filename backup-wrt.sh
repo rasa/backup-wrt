@@ -61,8 +61,9 @@ if [[ -f backup-wrt-config.sh ]]; then
 fi
 
 userhost="${user}@${host}"
+remotepath="PATH=/bin:/sbin:/usr/bin:/usr/sbin"
 
-SSH="ssh -q ${userhost}"
+SSH="ssh -q ${userhost} ${remotepath}"
 TAR="tar -cf -"
 
 hostname="$(${SSH} uname -n || true)"
