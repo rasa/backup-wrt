@@ -89,20 +89,6 @@ DDWRT="$(grep -qi dd-wrt loginprompt.txt && echo 1)"
 
 # all OSs:
 
-#CFE_BIN=cfe-backup.bin
-
-#if [[ -z "${DDWRT}" ]]; then
-#  MTD0=/dev/mtd0ro
-#else
-#  MTD0=/dev/mtdblock/0
-#fi
-
-#${SSH} dd if="${MTD0}" >"${CFE_BIN}"
-
-#${SSH} dd if="${MTD0}" bs=1 skip=4116 count=2048 | strings >cfe-strings.txt
-
-#strings -n 8 "${CFE_BIN}" >cfe-strings.txt
-
 mtdnum=`${SSH} cat /proc/mtd | grep mtd | wc -l`
 
 ${SSH} cat /proc/mtd | grep mtd
