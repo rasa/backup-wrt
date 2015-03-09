@@ -116,10 +116,10 @@ else
   MTD=/dev/mtdblock/$i
 fi
 
-echo if="${MTD}" ${mtdname}
+echo if="${MTD}" ${mtdname}.bin
 ${SSH} dd if="${MTD}" >"${mtdname}.bin"
 
-strings -n 8 "${mtdname}" >${mtdname}-strings.txt
+strings -n 8 "${mtdname}.bin" >${mtdname}-strings.txt
 
 done
 
