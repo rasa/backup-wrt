@@ -22,6 +22,7 @@ EXCLUDE_DIRS="
 "
 
 PROC_EXCLUDES="
+  kcore
   kmsg
   interrupts
 "
@@ -61,8 +62,9 @@ if [[ -f backup-wrt-config.sh ]]; then
 fi
 
 userhost="${user}@${host}"
+remotepath="PATH=/bin:/sbin:/usr/bin:/usr/sbin"
 
-SSH="ssh -q ${userhost}"
+SSH="ssh -q ${userhost} ${remotepath}"
 TAR="tar -cf -"
 
 hostname="$(${SSH} uname -n || true)"
@@ -87,19 +89,29 @@ DDWRT="$(grep -qi dd-wrt loginprompt.txt && echo 1)"
 
 # all OSs:
 
-CFE_BIN=cfe-backup.bin
+mtdnum=`${SSH} cat /proc/mtd | grep mtd | wc -l`
+
+${SSH} cat /proc/mtd | grep mtd
+
+for ((i=0; i<$mtdnum;i+=1))
+do
+
+mtdname=mtd$i"_`${SSH} cat /proc/mtd | grep mtd$i | sed  's/^mtd[0-9].*"\(.*\)"$/\1/' | tr " " "_"`"
 
 if [[ -z "${DDWRT}" ]]; then
-  MTD0=/dev/mtd0ro
+  MTD=/dev/mtd$i"ro"
 else
-  MTD0=/dev/mtdblock/0
+  MTD=/dev/mtdblock/$i
 fi
 
-${SSH} dd if="${MTD0}" >"${CFE_BIN}"
+echo if="${MTD}" ${mtdname}.bin
+${SSH} dd if="${MTD}" >"${mtdname}.bin"
 
-#${SSH} dd if="${MTD0}" bs=1 skip=4116 count=2048 | strings >cfe-strings.txt
+strings -n 8 "${mtdname}.bin" >${mtdname}-strings.txt
 
-strings -n 8 "${CFE_BIN}" >cfe-strings.txt
+done
+
+
 
 for cmd in ${CMDS}; do
   ${SSH} "${cmd}" >"${cmd}.txt"
@@ -216,3 +228,4 @@ ${SSH} ${TAR} -z /etc >"${BACKUP}"
 popd
 
 # eof
+
