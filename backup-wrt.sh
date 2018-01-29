@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2013-2014 Ross Smith II. All rights reserved.
+# Copyright (c) 2013-2018 Ross Smith II. All rights reserved. MIT licensed.
 
 # @todo test backing up CFE: see note 9 on http://www.dd-wrt.com/phpBB2/viewtopic.php?t=51486
 # @todo test backing up nvram
@@ -22,6 +22,7 @@ EXCLUDE_DIRS="
 "
 
 PROC_EXCLUDES="
+  kcore
   kmsg
   interrupts
 "
@@ -101,28 +102,24 @@ DDWRT="$(grep -qi dd-wrt loginprompt.txt && echo 1)"
 
 #strings -n 8 "${CFE_BIN}" >cfe-strings.txt
 
-mtdnum=`ssh -q root@192.168.1.1 cat /proc/mtd | grep mtd | wc -l`
+mtdnum=`${SSH} cat /proc/mtd | grep mtd | wc -l`
 
-ssh -q root@192.168.1.1 cat /proc/mtd | grep mtd
+${SSH} cat /proc/mtd | grep mtd
 
-for ((i=0; i<$mtdnum;i+=1))
-do
+for ((i=0; i<$mtdnum; i+=1)); do
+  mtdname=mtd$i"_`${SSH} cat /proc/mtd | grep mtd$i | sed  's/^mtd[0-9].*"\(.*\)"$/\1/' | tr " " "_"`"
 
-mtdname=mtd$i"_`ssh -q root@192.168.1.1 cat /proc/mtd | grep mtd$i | sed  's/^mtd[0-9].*"\(.*\)"$/\1/' | tr " " "_"`"
+  if [[ -z "${DDWRT}" ]]; then
+    MTD=/dev/mtd$i"ro"
+  else
+    MTD=/dev/mtdblock/$i
+  fi
 
-if [[ -z "${DDWRT}" ]]; then
-  MTD=/dev/mtd$i"ro"
-else
-  MTD=/dev/mtdblock/$i
-fi
+  echo if="${MTD}" ${mtdname}
+  ${SSH} dd if="${MTD}" >"${mtdname}.bin"
 
-echo if="${MTD}" ${mtdname}
-${SSH} dd if="${MTD}" >"${mtdname}.bin"
-
-strings -n 8 "${mtdname}" >${mtdname}-strings.txt
-
+  strings -n 8 "${mtdname}.bin" >${mtdname}-strings.txt
 done
-
 
 
 for cmd in ${CMDS}; do
