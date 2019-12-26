@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (c) 2013-2018 Ross Smith II. All rights reserved. MIT licensed.
+# Copyright (c) 2013-2019 Ross Smith II. All rights reserved. MIT licensed.
 
 # @todo test backing up CFE: see note 9 on http://www.dd-wrt.com/phpBB2/viewtopic.php?t=51486
 # @todo test backing up nvram
@@ -9,7 +9,7 @@
 # @todo test backing up config settings on command line: see curl -d 'username=root&password=your-good-password' "http://router/cgi-bin/luci/admin/system/backup?backup=kthxbye" > `date +%Y%d%m`_config_backup.tgz
 
 #set -e
-set -x
+# set -x
 
 EXCLUDE_DIRS="
   dev
@@ -22,9 +22,10 @@ EXCLUDE_DIRS="
 "
 
 PROC_EXCLUDES="
+  interrupts
+  kallsyms
   kcore
   kmsg
-  interrupts
 "
 
 TAR_DIRS="
@@ -33,11 +34,13 @@ TAR_DIRS="
   opt
   tmp
   usr/local
+  var
 "
 
 CMDS="
   busybox
   dmesg
+  fw_printenv
   hostid
   ifconfig
   lsmod
@@ -78,11 +81,13 @@ fi
 
 DIR="backups/${hostname}/$(date +%F_%H-%M-%S)"
 
+printf 'Backing up %s as %s to %s\n' "${host}" "${user}" "${DIR}"
+
 mkdir -p "${DIR}"
 
-pushd "${DIR}"
+pushd "${DIR}" >/dev/null
 
-${SSH} cat /tmp/loginprompt >loginprompt.txt
+${SSH} "test -f /tmp/loginprompt && cat /tmp/loginprompt" >loginprompt.txt
 
 DDWRT="$(grep -qi dd-wrt loginprompt.txt && echo 1)"
 
@@ -102,28 +107,29 @@ DDWRT="$(grep -qi dd-wrt loginprompt.txt && echo 1)"
 
 #strings -n 8 "${CFE_BIN}" >cfe-strings.txt
 
-mtdnum=`${SSH} cat /proc/mtd | grep mtd | wc -l`
+mtds="$(${SSH} cat /proc/mtd 2>/dev/null | grep mtd | cut -d: -f 1)"
 
-${SSH} cat /proc/mtd | grep mtd
+if false; then
 
-for ((i=0; i<$mtdnum; i+=1)); do
-  mtdname=mtd$i"_`${SSH} cat /proc/mtd | grep mtd$i | sed  's/^mtd[0-9].*"\(.*\)"$/\1/' | tr " " "_"`"
+  for mtd in ${mtds}; do
+    mtdname=${hostname}.${mtd}.bin
 
-  if [[ -z "${DDWRT}" ]]; then
-    MTD=/dev/mtd$i"ro"
-  else
-    MTD=/dev/mtdblock/$i
-  fi
+    if [[ -z "${DDWRT}" ]]; then
+      MTD="/dev/${mtd}ro"
+    else
+      i="$(tr -dd '[0-9]' <<<"${mtd}")"
+      MTD="/dev/mtdblock/${i}"
+    fi
 
-  echo if="${MTD}" ${mtdname}
-  ${SSH} dd if="${MTD}" >"${mtdname}.bin"
+    echo dd if="${MTD}" ${mtdname}
+    ${SSH} dd if="${MTD}" >"${mtdname}"
 
-  strings -n 8 "${mtdname}.bin" >${mtdname}-strings.txt
-done
-
+    strings -n 8 "${mtdname}" >"${mtdname}-strings.txt"
+  done
+fi
 
 for cmd in ${CMDS}; do
-  ${SSH} "${cmd}" >"${cmd}.txt"
+  ${SSH} "${cmd} 2>&1" >"${cmd}.txt"
 done
 
 ${SSH} uname -a >uname.txt
@@ -149,13 +155,13 @@ mkdir -p proc
 
 for path in ${PPROC_FILES}; do
   file="$(basename "${path}")"
-  ${SSH} cat "${path}" >"proc/${file}.txt"
+  ${SSH} "cat '${path}' 2>/dev/null" >"proc/${file}.txt"
 done
 
 # openwrt <=10.03 / dd-wrt specific:
 
 # /usr/sbin
-${SSH} nvram show >nvram-show.txt
+${SSH} nvram show 2>/dev/null >nvram-show.txt
 
 # openwrt <=10.03 specific:
 
@@ -170,7 +176,9 @@ ${SSH} "${PKG}" list | sort -i >pkg-list.txt
 # openwrt <=10.03 specific:
 
 # /usr/sbin
-${SSH} nvram info >nvram-info.txt
+if ${SSH} command -v nvram 2>/dev/null; then
+  ${SSH} nvram info >nvram-info.txt
+fi
 
 # openwrt >10.03 specific:
 
@@ -182,30 +190,42 @@ ${SSH} uci show >uci-show.txt
 
 ${SSH} "${PKG}" list-installed | sort -i >pkg-list-installed.txt
 
+# | grep overlay$ | sed -e 's|.*/||' | cut -d. -f 1 | sort -u
+
+cmd="/usr/bin/find /usr/lib/opkg/info -name '*.control' \( \( -exec test -f /rom/{} \; -exec echo {} rom \; \) -o \( -exec test -f /overlay/upper/{} \; -exec echo {} overlay \; \) -o \( -exec echo {} unknown \; \) \) | /bin/sed -e 's,.*/,,;s/\.control /\t/'"
+${SSH} ${cmd} >installed_packages.txt
+
+grep overlay$ installed_packages.txt | cut -f 1 | sort -u >user-installed_packages.txt
+
+printf '#!/bin/sh\n' >install-user-packages.sh
+printf "${PKG} update\\n" >>install-user-packages.sh
+sed "s|^|${PKG} install |" user-installed_packages.txt >>install-user-packages.sh
+chmod +x install-user-packages.sh
+
 # dd-wrt specific:
 
-HOSTNAME_NVRAM="${hostname}.nvram"
-TMP_HOSTNAME_NVRAM="/tmp/${HOSTNAME_NVRAM}"
+if [ -n "${DDWRT}" ]; then
+  HOSTNAME_NVRAM="${hostname}.nvram"
+  TMP_HOSTNAME_NVRAM="/tmp/${HOSTNAME_NVRAM}"
 
-${SSH} rm -f "${TMP_HOSTNAME_NVRAM}"
-# /usr/sbin
-${SSH} nvram backup "${TMP_HOSTNAME_NVRAM}"
-${SSH} cat "${TMP_HOSTNAME_NVRAM}" >"${HOSTNAME_NVRAM}"
-${SSH} rm -f "${TMP_HOSTNAME_NVRAM}"
+  ${SSH} rm -f "${TMP_HOSTNAME_NVRAM}"
+  # /usr/sbin
+  ${SSH} nvram backup "${TMP_HOSTNAME_NVRAM}"
+  ${SSH} cat "${TMP_HOSTNAME_NVRAM}" >"${HOSTNAME_NVRAM}"
+  ${SSH} rm -f "${TMP_HOSTNAME_NVRAM}"
 
-rm -f nvrambak.bin
+  rm -f nvrambak.bin
 
-if [[ -n "${DDWRT}" ]]; then
   wget --http-user "${HTTP_USER}" --http-passwd "${HTTP_PASSWD}" "http://${host}/nvrambak.bin"
 fi
 
 # all OSs:
 
-${SSH} ls -lR / >ls-root.txt
+${SSH} "ls -lR / 2>/dev/null" >ls-root.txt
 
 for dir in ${TAR_DIRS}; do
   tarname="$(echo "${dir}" | tr / -)"
-  ${SSH} "test -d \"/${dir}\" && ${TAR} \"/${dir}\"" >"${tarname}.tar"
+  ${SSH} "test -d \"/${dir}\" && ${TAR} \"/${dir}\" 2>/dev/null" >"${tarname}.tar"
   if [[ -s "${tarname}.tar" ]]; then
     tar xf "${tarname}.tar"
   fi
@@ -215,12 +235,19 @@ PEXCLUDE_DIRS="$(echo "${EXCLUDE_DIRS}" | tr "\n\t\r" ' ' | tr -s ' ' | perl -pe
 
 DIRS="$(${SSH} ls -1 / 2>/dev/null | egrep -v "^(${PEXCLUDE_DIRS})$" | perl -p -e 's|(.*)|/\1|' | tr '\n' ' ')"
 
-${SSH} ${TAR} ${DIRS} >root.tar
+${SSH} "${TAR} ${DIRS} 2>/dev/null" >root.tar
 
 # openwrt compatible backup file:
 
-BACKUP="backup-${hostname}-$(date +%F).tar.gz"
-${SSH} ${TAR} -z /etc >"${BACKUP}"
+${SSH} ${TAR} -z /etc >etc.tar.gz
+
+${SSH} "${TAR} -z \$(opkg list-changed-conffiles)" >list-changed-conffiles.tar.gz
+
+${SSH} "${TAR} -z \$(grep -v -E '^\s*#' /etc/sysupgrade.conf)" >sysupgrade-conffiles.tar.gz
+
+${SSH} sysupgrade -l >sysupgrade-l.txt
+
+${SSH} "${TAR} -z \$(sysupgrade -l)" >sysupgrade-l.tar.gz
 
 #if [[ -z "${DDWRT}" ]]; then
 # EXCLUDE_LST=/tmp/exclude.lst
@@ -234,7 +261,6 @@ ${SSH} ${TAR} -z /etc >"${BACKUP}"
 # ${SSH} rm -f "${EXCLUDE_LST}"
 #fi
 
-popd
+popd >/dev/null
 
 # eof
-
